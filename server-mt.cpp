@@ -12,11 +12,21 @@
 #include <unistd.h>
 #include <string>
 #include <iostream>
+#include <pthread.h>
 #include <fstream>
 
 #define BACK_LOG 50
 
 using namespace std;
+
+//Common Lock
+pthread_mutex_t mutex;
+//COndition Variables
+pthread_cond_t full;
+pthread_cond_t empty;
+
+//queue
+queue<int> req_q;
 
 void error(string msg)
 {
@@ -24,18 +34,82 @@ void error(string msg)
 	exit(1);
 }
 
-//signal handler (signal send by child when it exits)
-void sig_handler(int signo)
-{
-	if(signo == SIGCHLD)
-	{
-		int status,pid;
-		//cout<<"Received Signal\n";
-		//reap all zombie child with nonblocking wait pid
-		while( (pid=waitpid(-1,&status,WNOHANG))>0 )
-			{//cout<<"Pid of process reaped : "<<pid<<endl;
+
+void *worker()
+{	
+	//variable declarations
+	char buffer[1024]; //buffer to take client req
+	int sockfd,n;
+	while(true)
+	{	
+		//acquire lock
+		pthread_mutex_lock(&mutex);
+
+		//wait until a req comes
+		while(req_q.empty())
+			pthread_cond_wait(&empty, &mutex);
+
+		//if non-empty pop from queue
+		sockfd = req_q.front();
+		req_q.pop_front();
+		//signal server
+		pthread_cond_signal(&full);
+		//unlock
+		pthread_mutex_unlock(&mutex);
+
+
+
+		/* read message from client */
+		 bzero(buffer,1024);	 
+		 if ( (n = read(sockfd,buffer,sizeof(buffer)))<0) 
+		 {	
+		 	//close on failure
+		 	close(newsockfd);
+		 	error("ERROR reading from socket");
+		 }
+		 
+		 //printf("%s requested by client IP %s \n",buffer,inet_ntoa(cli_addr.sin_addr));
+		 
+		 //parsing request
+		 int i;
+		 for(i=0;i<255;i++) if(buffer[i]==' ') break;
+		 i++;
+		 string filename = "";
+		 for(;i<255;i++) {if(buffer[i]=='.') break; filename+=buffer[i];}
+		 filename+=".txt";
+
+		 //Reading the requested file
+		 ifstream file (filename.c_str(), ios::in);
+		 if(file.fail()) 
+	 	 {	
+	 	 	//failed : close socket
+	 		close(sockfd);
+	 		error("File not found");
+	 	 }
+
+		 //buffer for file content
+		 bzero(buffer, sizeof(buffer));
+		 int lenght = sizeof(buffer)-1;
+		 /* send reply to client */ //the requested file is being written in socket
+		 while(!file.eof())
+		 {
+		 	file.read(buffer2,length-1);
+		 	n = write(sockfd,buffer2,strlen(buffer2));
+			if (n < 0) {
+				close(sockfd);
+				error("ERROR writing to socket");
+			}
+		 }
+
+		 //printf("File Transfer Completed to Client IP %s\n",inet_ntoa(cli_addr.sin_addr));
+		 //cleanup
+		 file.close();
+
+		 //Close Socket
+		 close(sockfd);
 	}
-	}
+
+	pthread_exit(1);
 }
 
 int main(int argc, char *argv[])
@@ -49,14 +123,15 @@ int main(int argc, char *argv[])
 
 	 
 	 if (argc < 4) {
-		 fprintf(stderr,"ERROR, no port provided\n");
-		 exit(1);
+		 error("Usage <executable> <port> <number of workers> <queue size>\n");
 	 }
 	 //Arguments
 	 int portno = atoi(argv[1]);
 	 int num_workers = atoi(argv[2]);
 	 int queue_size = atoi(argv[3]);
-	 
+	 //Check if 0 workers
+	 if(num_workers<=0)
+		error("Server without Workers. Exiting\n")
 
 	 /* create socket */
 
@@ -73,83 +148,57 @@ int main(int argc, char *argv[])
 
 	 /* bind socket to this port number on this machine */
 
-	 if (bind(sockfd, (struct sockaddr *) &serv_addr,
-			  sizeof(serv_addr)) < 0) 
+	 if (bind(sockfd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
 			  error("ERROR on binding");
 
-	 //Registering the signal handler in kernel
-	 if (signal(SIGCHLD, sig_handler) == SIG_ERR)
-        fprintf(stderr,"Can't catch SIGCHLD signal");
-	 
+	 //Initialize lock for queue data structure
+	 pthread_mutex_init(&mutex;,0);
+	 //Conditional Variables
+	 pthread_cond_init(&full, 0);
+	 pthread_cond_init(&empty, 0);
+
+	 //Initialize Worker threads
+	 pthread_t workers[num_workers];
+	 //Create Worker threads
+	 for(int i = 0;i<num_workers;i++)
+	 {
+	 	pthread_create(&workers[i], 0, worker, 0);
+	 }
+
+
 	 while(true)
 	 {
 		 /* listen for incoming connection requests */
 
 		  listen(sockfd, BACK_LOG);
 		  clilen = sizeof(cli_addr);
+
+		  //if there is a request and queue not full;
+		  
+		  pthread_mutex_lock(&mutex);
+		  //wait until not full
+		  while(req_q.size() >= queue_size || queue_size!=0)
+		  	 pthread_cond_wait(&full, &mutex);
+			 
 		  /* accept a new request, create a newsockfd */
 		  if ( (newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr,&clilen)) < 0) 
-				error("ERROR on accept \n");
-		  
-		  int ret = fork();
-		  if(ret==0)
-		  {
-			
-			/* read message from client */
-			 bzero(buffer,256);
-			 if ( (n = read(newsockfd,buffer,255))<0) 
-			 {	
-			 	//close on failure
-			 	close(newsockfd);
-			 	error("ERROR reading from socket");
-			 }
-			 
-			 //printf("%s requested by client IP %s \n",buffer,inet_ntoa(cli_addr.sin_addr));
-			 
-			 //parsing request
-			 int i;
-			 for(i=0;i<255;i++) if(buffer[i]==' ') break;
-			 i++;
-			 string filename = "";
-			 for(;i<255;i++) {if(buffer[i]=='.') break; filename+=buffer[i];}
-			 filename+=".txt";
-
-			 //Reading the requested file
-			 ifstream file (filename.c_str(), ios::in);
-			 if(file.fail()) 
-		 	 {
-		 		close(newsockfd);
-		 		error("File not found");
-		 	 }
-
-			 //buffer for file content
-			 int length = 1024;
-			 char buffer2[length];
-
-			 /* send reply to client */ //the requested file is being written in socket
-			 while(!file.eof())
-			 {
-			 	file.read(buffer2,length-1);
-			 	n = write(newsockfd,buffer2,strlen(buffer2));
-				if (n < 0) {
-					close(newsockfd);
-					error("ERROR writing to socket");
-				}
-			 }
-
-			 //printf("File Transfer Completed to Client IP %s\n",inet_ntoa(cli_addr.sin_addr));
-			 //cleanup
-			 file.close();
-
-			 //Close Socket
-			 close(newsockfd);
-			 return 0;
-
-		  }
-		  else
-		  {	
-		  	close(newsockfd);
-		  }
+		 		error("ERROR on accept \n");
+		  //push the new req in queue
+		  req_q.push(newsockfd);
+		  //signal worker of new req
+		  pthread_cond_signal(&empty);
+		  //unlock 
+		  pthread_mutex_unlock(&mutex);
 	  }
+
+	  //Join Worker Threads
+	  for(int i = 0;i<num_workers;i++)
+	  {
+	  	pthread_join(workers[i], NULL);
+	  }
+	  //Destroy Conds and Locks
+	  pthread_mutex_destroy(&mutex);
+	  pthread_cond_destroy(full);
+	  pthread_cond_destroy(empty);
 	 return 0; 
 }
