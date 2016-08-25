@@ -6,15 +6,16 @@
 #include <netdb.h> 
 #include <pthread.h>
 #include <string.h>
+#include <string>
 #include <unistd.h>
 #include <time.h>
 #include <iostream>
 
 #define MAX_FILE_NO 10000;
 
-void error(char *msg)
+void error(std::string msg)
 {
-    perror(msg);
+    perror(msg.c_str());
     exit(0);
 }
 
@@ -41,7 +42,7 @@ void *client(void *count)
   char buffer[b_size];
   int num_b, diff_time, file_n;
   time_t start_t = time(NULL),curr_t = time(NULL);
-  diff_time = difftime(curr_t - start_t);
+  diff_time = difftime(curr_t , start_t);
   while(attr.duration > diff_time )
   {	
 
@@ -85,7 +86,7 @@ void *client(void *count)
   	sleep(attr.sleep_time);
   	//Time elapsed 
     curr_t = time(NULL);
-    diff_time = difftime( time(NULL)-start_t);
+    diff_time = difftime( time(NULL), start_t);
     close(sock_fd);
   }
   pthread_exit((void *)0);

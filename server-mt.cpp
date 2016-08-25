@@ -14,7 +14,7 @@
 #include <iostream>
 #include <pthread.h>
 #include <fstream>
-
+#include <queue>
 #define BACK_LOG 50
 
 using namespace std;
@@ -35,7 +35,7 @@ void error(string msg)
 }
 
 
-void *worker()
+void *worker(void *)
 {	
 	//variable declarations
 	char buffer[1024]; //buffer to take client req
@@ -51,7 +51,7 @@ void *worker()
 
 		//if non-empty pop from queue
 		sockfd = req_q.front();
-		req_q.pop_front();
+		req_q.pop();
 		//signal server
 		pthread_cond_signal(&full);
 		//unlock
@@ -64,7 +64,7 @@ void *worker()
 		 if ( (n = read(sockfd,buffer,sizeof(buffer)))<0) 
 		 {	
 		 	//close on failure
-		 	close(newsockfd);
+		 	close(sockfd);
 		 	error("ERROR reading from socket");
 		 }
 		 
@@ -89,12 +89,12 @@ void *worker()
 
 		 //buffer for file content
 		 bzero(buffer, sizeof(buffer));
-		 int lenght = sizeof(buffer)-1;
+		 int length = sizeof(buffer)-1;
 		 /* send reply to client */ //the requested file is being written in socket
 		 while(!file.eof())
 		 {
-		 	file.read(buffer2,length-1);
-		 	n = write(sockfd,buffer2,strlen(buffer2));
+		 	file.read(buffer,length-1);
+		 	n = write(sockfd,buffer,strlen(buffer));
 			if (n < 0) {
 				close(sockfd);
 				error("ERROR writing to socket");
@@ -109,7 +109,7 @@ void *worker()
 		 close(sockfd);
 	}
 
-	pthread_exit(1);
+	pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[])
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
 	 int queue_size = atoi(argv[3]);
 	 //Check if 0 workers
 	 if(num_workers<=0)
-		error("Server without Workers. Exiting\n")
+		error("Server without Workers. Exiting\n");
 
 	 /* create socket */
 
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 			  error("ERROR on binding");
 
 	 //Initialize lock for queue data structure
-	 pthread_mutex_init(&mutex;,0);
+	 pthread_mutex_init(&mutex,0);
 	 //Conditional Variables
 	 pthread_cond_init(&full, 0);
 	 pthread_cond_init(&empty, 0);
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 	 //Create Worker threads
 	 for(int i = 0;i<num_workers;i++)
 	 {
-	 	pthread_create(&workers[i], 0, worker, 0);
+	 	pthread_create(&workers[i], 0, worker, (void * )0);
 	 }
 
 
@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
 	  }
 	  //Destroy Conds and Locks
 	  pthread_mutex_destroy(&mutex);
-	  pthread_cond_destroy(full);
-	  pthread_cond_destroy(empty);
+	  pthread_cond_destroy(&full);
+	  pthread_cond_destroy(&empty);
 	 return 0; 
 }
