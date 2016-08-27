@@ -107,7 +107,7 @@ void *client(void *arg)
 
 struct sockaddr_in set_server(struct sockaddr_in &server_addr, struct hostent *server, int &port_no)
 {
-	bzero((char *) &server_addr, sizeof(server_addr));
+  bzero((char *) &server_addr, sizeof(server_addr));
   server_addr.sin_family = AF_INET;
   bcopy((char *)server->h_addr, (char *)&server_addr.sin_addr.s_addr, server->h_length);
   server_addr.sin_port = htons(port_no);

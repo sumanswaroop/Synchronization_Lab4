@@ -15,7 +15,7 @@
 #include <pthread.h>
 #include <fstream>
 #include <queue>
-#define BACK_LOG 50
+#define BACK_LOG 10000
 
 using namespace std;
 
@@ -67,9 +67,7 @@ void *worker(void *)
 		 	close(sockfd);
 		 	error("ERROR reading from socket");
 		 }
-		 
-		 //printf("%s requested by client IP %s \n",buffer,inet_ntoa(cli_addr.sin_addr));
-		 
+		 	 
 		 //parsing request
 		 int i;
 		 for(i=0;i<255;i++) if(buffer[i]==' ') break;
@@ -101,7 +99,8 @@ void *worker(void *)
 			}
 		 }
 
-		 //printf("File Transfer Completed to Client IP %s\n",inet_ntoa(cli_addr.sin_addr));
+		
+		 
 		 //cleanup
 		 file.close();
 
@@ -164,27 +163,31 @@ int main(int argc, char *argv[])
 	 {
 	 	pthread_create(&workers[i], 0, worker, (void * )0);
 	 }
-
-
+	 /* listen for incoming connection requests */
+	 listen(sockfd, BACK_LOG);
+	 
 	 while(true)
 	 {
-		 /* listen for incoming connection requests */
-
-		  listen(sockfd, BACK_LOG);
-		  clilen = sizeof(cli_addr);
-
+		 
 		  //if there is a request and queue not full;
-		  
+		  /* accept a new request, create a newsockfd */
+	 	if(req_q.size() < queue_size || queue_size==0)
+		 {
+		  	if ( (newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr,&clilen)) < 0) 
+		 		error("ERROR on accept \n");
+		 }
+		 else continue;
+
 		  pthread_mutex_lock(&mutex);
 		  //wait until not full
-		  while(req_q.size() >= queue_size || queue_size!=0)
+		  while(req_q.size() >= queue_size && queue_size!=0)
 		  	 pthread_cond_wait(&full, &mutex);
-			 
-		  /* accept a new request, create a newsockfd */
-		  if ( (newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr,&clilen)) < 0) 
-		 		error("ERROR on accept \n");
+		  
+		  
+		  	 
 		  //push the new req in queue
 		  req_q.push(newsockfd);
+		  //cout<<req_q.size()<<"\n";
 		  //signal worker of new req
 		  pthread_cond_signal(&empty);
 		  //unlock 
