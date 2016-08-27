@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <iostream>
+#include <vector>
 
 #define MAX_FILE_NO 10000;
 
@@ -18,6 +19,9 @@ void error(std::string msg)
     perror(msg.c_str());
     exit(0);
 }
+
+std::vector< int> count_req;
+std::vector<double > time_perc;
 
 struct client_attr
 {
@@ -29,11 +33,13 @@ struct client_attr
 }attr;
 
 
-void *client(void *count)
+void *client(void *arg)
 {	
 
-  int *count_req = (int *)count;
-  
+  int tid= *((int *)arg);
+  //free allocated memory
+  free(arg);
+
   int sock_fd;
 	//open socket
 	     
@@ -41,7 +47,8 @@ void *client(void *count)
   int b_size = 1024;
   char buffer[b_size];
   int num_b, diff_time, file_n;
-  time_t start_t = time(NULL),curr_t = time(NULL);
+  time_t start_t = time(NULL),curr_t = time(NULL),send_time;
+  double total_time=0.0,count;
   diff_time = difftime(curr_t , start_t);
   while(attr.duration > diff_time )
   {	
@@ -56,7 +63,7 @@ void *client(void *count)
     if(attr.mode){file_n = rand()%MAX_FILE_NO;}
   	else file_n=0;
   	//Send Request
-  	
+  	send_time = time(NULL);
   	sprintf(buffer, "get files/foo%d.txt",file_n);
   	if( ( num_b = write(sock_fd, buffer, strlen(buffer)) ) < 0)
   	{
@@ -76,19 +83,22 @@ void *client(void *count)
       received_size+=curr_size;
   	}
   	if(received_size!=0){
-  		//std::cout<<"File Received\n";
-  		(*count_req)++;
-  		
+  		//std::cout<<"File Received\n";	
+  		count++;
+  		total_time += difftime(time(NULL), send_time);
   	}
     else fprintf(stderr, "Requested File could not be served by server\n");
 
     //Sleep and request again after sleep time
+  	
   	sleep(attr.sleep_time);
   	//Time elapsed 
     curr_t = time(NULL);
     diff_time = difftime( time(NULL), start_t);
     close(sock_fd);
   }
+  count_req[tid] = count;
+  time_perc[tid] = total_time;
   pthread_exit((void *)0);
 
 
@@ -128,7 +138,10 @@ int main(int argc, char *argv[])
 	int port_no = atoi(argv[2]);
     
     //Count Requests
-    int count_req[num_of_threads];
+	count_req.resize(num_of_threads,0);
+   	
+	//Time Required to serve file
+	time_perc.resize(num_of_threads,0.0);
     //Server info
     struct hostent *server = gethostbyname(argv[1]);
     if (server == NULL)
@@ -139,10 +152,13 @@ int main(int argc, char *argv[])
    
    	//Create Threads
    	pthread_t threads[num_of_threads];
+
    	int error_th;
    	for(int i = 0;i<num_of_threads;i++)
    	{
-   		if( (error_th=pthread_create(&threads[i], NULL, client, &count_req[i])) < 0)
+   		int *arg = new int;
+   		*arg = i;
+   		if( (error_th=pthread_create(&threads[i], NULL, client, (void *)arg )) < 0)
    			fprintf(stderr,"Error Creating Thread %d\n",i);
    	}
    	// free attribute and wait for the other threads
@@ -155,15 +171,20 @@ int main(int argc, char *argv[])
    			fprintf(stderr,"Error Joining thread %d \n",i);
    	}
    	end = time(NULL);
-   	float diff_tim =  (int) ((end - start)*1000.0)/(CLOCKS_PER_SEC/1000);
+   	float diff_tim =  difftime(end, start);
    	//Calculate throughput
-   	float throughput =0;
+   	double throughput =0;
+   	double response_time=0.0;
    	for(int i = 0;i<num_of_threads;i++)
    	{
    		throughput+=count_req[i];
+   		response_time+= time_perc[i];
+
    	}
+   	response_time/=throughput;
    	throughput/=(diff_tim);
-   	std::cout<<"\n"<<throughput<<"\n";
+   	std::cout<<"\nThroughput: "<<throughput<<"\n";
+   	std::cout<<"Average Response Time : "<<response_time<<"\n";
 
     return 0;
 }
