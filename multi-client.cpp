@@ -13,7 +13,7 @@
 #include <vector>
 
 #define MAX_FILE_NO 10000;
-
+using namespace std;
 void error(std::string msg)
 {
     perror(msg.c_str());
@@ -22,7 +22,8 @@ void error(std::string msg)
 
 std::vector< int> count_req;
 std::vector<double > time_perc;
-
+std::vector<int> connection_failed;
+std::vector<int> file_not_served;
 struct client_attr
 {
 	struct sockaddr_in server_addr;
@@ -58,7 +59,14 @@ void *client(void *arg)
       pthread_exit((void *)-1);
     //connect to server
     if (connect(sock_fd,(struct sockaddr *)&attr.server_addr,sizeof(attr.server_addr)) < 0) 
-      pthread_exit((void *)-1);
+      {
+      	fprintf(stderr, "Error Connecting to server");
+      	close(sock_fd);
+      	connection_failed[tid]++;
+      	diff_time = difftime( time(NULL), start_t);
+      	continue;
+      	//pthread_exit((void *)-1);
+      }
   
     if(attr.mode){file_n = rand()%MAX_FILE_NO;}
   	else file_n=0;
@@ -67,9 +75,9 @@ void *client(void *arg)
   	sprintf(buffer, "get files/foo%d.txt",file_n);
   	if( ( num_b = write(sock_fd, buffer, strlen(buffer)) ) < 0)
   	{
-        //fprintf(stderr, "Error Writing to Socket");
+        fprintf(stderr, "Error Writing to Socket");
         close(sock_fd);
-        pthread_exit((void *)-2);
+        //pthread_exit((void *)-2);
     }
     else {
     	//std::cout<<"Get Request Sent to Server\n";
@@ -87,7 +95,10 @@ void *client(void *arg)
   		count++;
   		total_time += difftime(time(NULL), send_time);
   	}
-    else fprintf(stderr, "Requested File could not be served by server\n");
+    else {
+    	fprintf(stderr, "Requested File could not be served by server\n");
+    	file_not_served[tid]++;
+    }
 
     //Sleep and request again after sleep time
   	
@@ -142,6 +153,8 @@ int main(int argc, char *argv[])
    	
 	//Time Required to serve file
 	time_perc.resize(num_of_threads,0.0);
+	connection_failed.resize(num_of_threads,0);
+	file_not_served.resize(num_of_threads,0);
     //Server info
     struct hostent *server = gethostbyname(argv[1]);
     if (server == NULL)
@@ -175,10 +188,14 @@ int main(int argc, char *argv[])
    	//Calculate throughput
    	double throughput =0;
    	double response_time=0.0;
+   	int file_tot=0;
+   	int conn_fail = 0;
    	for(int i = 0;i<num_of_threads;i++)
    	{
    		throughput+=count_req[i];
    		response_time+= time_perc[i];
+   		file_tot += file_not_served[i];
+   		conn_fail+=connection_failed[i];
 
    	}
    	response_time/=throughput;
@@ -186,5 +203,7 @@ int main(int argc, char *argv[])
    	std::cout<<"\nThroughput: "<<throughput<<"\n";
    	std::cout<<"Average Response Time : "<<response_time<<"\n";
 
+   	std::cout<<"connection_failed"<<" "<<conn_fail<<endl;
+   	std::cout<<"file_not_served "<< file_tot<<endl;
     return 0;
 }

@@ -15,7 +15,7 @@
 #include <pthread.h>
 #include <fstream>
 #include <queue>
-#define BACK_LOG 10000
+#define BACK_LOG 8
 
 using namespace std;
 
@@ -162,46 +162,51 @@ int main(int argc, char *argv[])
 	 for(int i = 0;i<num_workers;i++)
 	 {
 	 	pthread_create(&workers[i], 0, worker, (void * )0);
+	 	cout<<"Creating Worker thread"<<endl;
 	 }
 	 /* listen for incoming connection requests */
 	 listen(sockfd, BACK_LOG);
-	 
 	 while(true)
 	 {
 		 
 		  //if there is a request and queue not full;
 		  /* accept a new request, create a newsockfd */
-	 	if(req_q.size() < queue_size || queue_size==0)
-		 {
-		  	if ( (newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr,&clilen)) < 0) 
+	 	
+		 
+		 if ( (newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr,&clilen)) < 0) 
 		 		error("ERROR on accept \n");
-		 }
-		 else continue;
-
+		 
+		 
 		  pthread_mutex_lock(&mutex);
 		  //wait until not full
-		  while(req_q.size() >= queue_size && queue_size!=0)
+
+		  while(req_q.size() >= queue_size && queue_size !=0)
 		  	 pthread_cond_wait(&full, &mutex);
+		  
 		  
 		  
 		  	 
 		  //push the new req in queue
 		  req_q.push(newsockfd);
-		  //cout<<req_q.size()<<"\n";
+		  //cout<<req_q.size()<<endl;
 		  //signal worker of new req
 		  pthread_cond_signal(&empty);
 		  //unlock 
 		  pthread_mutex_unlock(&mutex);
+
 	  }
 
 	  //Join Worker Threads
 	  for(int i = 0;i<num_workers;i++)
 	  {
 	  	pthread_join(workers[i], NULL);
+	  	cout<<"Exiting Worker"<<" i "<<endl;
 	  }
 	  //Destroy Conds and Locks
 	  pthread_mutex_destroy(&mutex);
 	  pthread_cond_destroy(&full);
 	  pthread_cond_destroy(&empty);
+
+	  
 	 return 0; 
 }
